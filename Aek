@@ -1,0 +1,241 @@
+-- Library Core Loadstring
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/slf0Dev/Goat-poop/main/Windows%2010%20UI%20Library"))()
+
+-- Creating Gui
+local MainWindow = Library.Main("Blue Lock Rivals", "RightControl")
+
+-- Creating Categories
+local Category = MainWindow.Category("หลัก", "rbxassetid://4483345998", "Fit", 0)
+
+-- Creating Folders
+local BallFolder = Category.Folder("ระบบลูกบอล")
+local PlayerFolder = Category.Folder("ระบบตัวละคร")
+local VisualFolder = Category.Folder("ระบบการมองเห็น")
+
+-- Variables Reference
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- Global Settings
+local Settings = {
+    BigBallSize = 1,
+    HitboxSize = 1,
+    RainbowESP = false,
+    AutoGoal = false,
+    SpeedValue = 16,
+    SpeedToggle = false,
+    FlyValue = 50,
+    FlyToggle = false
+}
+
+----------------------------------------------------------------
+-- Helper Functions
+----------------------------------------------------------------
+
+-- ฟังก์ชันค้นหาลูกบอลใน Workspace
+local function GetBall()
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj.Name:lower():find("ball") or obj.Name:lower():find("football") then
+            if obj:IsA("BasePart") then
+                return obj
+            elseif obj:IsA("Model") and obj.PrimaryPart then
+                return obj.PrimaryPart
+            end
+        end
+    end
+    return nil
+end
+
+-- ตรวจสอบว่ามีผู้เล่นคนอื่นถือบอลอยู่หรือไม่
+local function IsBallHeldByOther(ball)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and (hrp.Position - ball.Position).Magnitude < 5 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+----------------------------------------------------------------
+-- 1. ระบบลูกบอล (Big Ball & Auto Goal)
+----------------------------------------------------------------
+
+BallFolder.Slider("ขนาดลูกบอล (Big Ball)", 1, 10, function(value)
+    Settings.BigBallSize = value
+    local ball = GetBall()
+    if ball then
+        ball.Size = Vector3.new(value, value, value)
+    end
+end, 1, false)
+
+BallFolder.Toggle("ทำประตูอัตโนมัติ (Auto Goal)", function(bool)
+    Settings.AutoGoal = bool
+end, false)
+
+-- Loop สำหรับระบบ Auto Goal
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Settings.AutoGoal then
+            local ball = GetBall()
+            if ball and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                -- เช็คความเร็วของบอลเพื่อดูว่าหยุดนิ่งหรือไม่ และต้องไม่มีคนถืออยู่
+                local isBallStopped = ball.Velocity.Magnitude < 1
+                if isBallStopped and not IsBallHeldByOther(ball) then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = ball.CFrame + Vector3.new(0, 3, 0)
+                end
+            end
+        end
+    end
+end)
+
+----------------------------------------------------------------
+-- 2. ระบบตัวละคร (Hitbox, Speed, Fly)
+----------------------------------------------------------------
+
+PlayerFolder.Slider("ขนาด Hitbox ศัตรู", 1, 10, function(value)
+    Settings.HitboxSize = value
+end, 1, false)
+
+-- Loop สำหรับขยาย Hitbox ผู้เล่นคนอื่น
+RunService.RenderStepped:Connect(function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = player.Character.HumanoidRootPart
+            if Settings.HitboxSize > 1 then
+                hrp.Size = Vector3.new(Settings.HitboxSize, Settings.HitboxSize, Settings.HitboxSize)
+                hrp.Transparency = 0.7
+                hrp.BrickColor = BrickColor.new("Really red")
+                hrp.Material = Enum.Material.Forcefield
+                hrp.CanCollide = false
+            else
+                hrp.Size = Vector3.new(2, 2, 1)
+                hrp.Transparency = 1
+            end
+        end
+    end
+end)
+
+PlayerFolder.Toggle("เปิดใช้งานวิ่งเร็ว", function(bool)
+    Settings.SpeedToggle = bool
+    if not bool and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = 16
+    end
+end, false)
+
+PlayerFolder.Slider("ความเร็วการวิ่ง", 1, 100, function(value)
+    Settings.SpeedValue = value
+end, 16, false)
+
+-- Loop สำหรับระบบวิ่งเร็ว
+RunService.RenderStepped:Connect(function()
+    if Settings.SpeedToggle and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = Settings.SpeedValue
+    end
+end)
+
+PlayerFolder.Toggle("เปิดใช้งานการบิน (Fly)", function(bool)
+    Settings.FlyToggle = bool
+    
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = character.HumanoidRootPart
+
+    if bool then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "FlyVelocity"
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = hrp
+
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "FlyGyro"
+        bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bg.CFrame = hrp.CFrame
+        bg.Parent = hrp
+
+        task.spawn(function()
+            while Settings.FlyToggle and hrp:FindFirstChild("FlyVelocity") and hrp:FindFirstChild("FlyGyro") do
+                local camera = Workspace.CurrentCamera
+                local moveDir = Vector3.new(0, 0, 0)
+
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                    moveDir = moveDir + camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                    moveDir = moveDir - camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                    moveDir = moveDir - camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                    moveDir = moveDir + camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                    moveDir = moveDir + Vector3.new(0, 1, 0)
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                    moveDir = moveDir - Vector3.new(0, 1, 0)
+                end
+
+                hrp.FlyVelocity.Velocity = moveDir * Settings.FlyValue
+                hrp.FlyGyro.CFrame = camera.CFrame
+                task.wait()
+            end
+
+            if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+            if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+        end)
+    else
+        if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+        if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+    end
+end, false)
+
+PlayerFolder.Slider("ความเร็วการบิน", 1, 100, function(value)
+    Settings.FlyValue = value
+end, 50, false)
+
+----------------------------------------------------------------
+-- 3. ระบบการมองเห็น (Rainbow ESP)
+----------------------------------------------------------------
+
+VisualFolder.Toggle("เปิดใช้งาน ESP สีรุ้ง", function(bool)
+    Settings.RainbowESP = bool
+    if not bool then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("Highlight") then
+                player.Character.Highlight:Destroy()
+            end
+        end
+    end
+end, false)
+
+-- Loop สำหรับระบบ Rainbow ESP
+RunService.RenderStepped:Connect(function()
+    if Settings.RainbowESP then
+        local hue = (tick() % 5) / 5
+        local rainbowColor = Color3.fromHSV(hue, 1, 1)
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local highlight = player.Character:FindFirstChild("Highlight")
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "Highlight"
+                    highlight.Parent = player.Character
+                end
+                highlight.FillColor = rainbowColor
+                highlight.OutlineColor = Color3.new(1, 1, 1)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+            end
+        end
+    end
+end)
